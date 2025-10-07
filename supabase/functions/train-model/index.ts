@@ -15,11 +15,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { project_id } = await req.json();
+    const { device_id } = await req.json();
 
-    if (!project_id) {
+    if (!device_id) {
       return new Response(
-        JSON.stringify({ error: "project_id is required" }),
+        JSON.stringify({ error: "device_id is required" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -31,7 +31,7 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     const samplesResponse = await fetch(
-      `${supabaseUrl}/rest/v1/wp_samples?project_id=eq.${project_id}&order=ts_utc.asc`,
+      `${supabaseUrl}/rest/v1/wp_samples?device_id=eq.${device_id}&order=ts_utc.asc`,
       {
         headers: {
           apikey: supabaseKey,
@@ -56,6 +56,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const projectId = samples[0]?.project_id;
+
     const features = samples.map((s: any) => {
       const date = new Date(s.ts_utc);
       const hour = date.getUTCHours();
@@ -72,8 +74,8 @@ Deno.serve(async (req: Request) => {
       };
     });
 
-    const modelContent = generateTFLiteModel(features, samples.length);
-    const filename = `${project_id}_model_${Date.now()}.tflite`;
+    const modelContent = generateTFLiteModel(features, samples.length, device_id);
+    const filename = `${device_id}_model_${Date.now()}.tflite`;
 
     const insertResponse = await fetch(
       `${supabaseUrl}/rest/v1/ml_models`,
@@ -86,7 +88,8 @@ Deno.serve(async (req: Request) => {
           Prefer: "return=representation",
         },
         body: JSON.stringify({
-          project_id,
+          project_id: projectId,
+          device_id: device_id,
           model_type: "tflite",
           filename,
           file_path: `/tmp/${filename}`,
@@ -127,9 +130,9 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-function generateTFLiteModel(features: any[], sampleCount: number): Uint8Array {
+function generateTFLiteModel(features: any[], sampleCount: number, deviceId: string): Uint8Array {
   const header = new TextEncoder().encode(
-    `TFLite Model\nGenerated: ${new Date().toISOString()}\nSamples: ${sampleCount}\nFeatures: ${JSON.stringify(features.slice(0, 5))}\n`
+    `TFLite Model\nDevice: ${deviceId}\nGenerated: ${new Date().toISOString()}\nSamples: ${sampleCount}\nFeatures: ${JSON.stringify(features.slice(0, 5))}\n`
   );
   
   const modelData = new Uint8Array(1024 + header.length);
